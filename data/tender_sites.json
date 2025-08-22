@@ -1,31 +1,20 @@
 [
-    {
-      "name": "Kenya Tenders Portal",
-      "url": "https://www.tenders.go.ke/website/Tenders/index"
-    },
-    {
-      "name": "UNGM – United Nations Global Marketplace",
-      "url": "https://www.ungm.org/Public/Notice"
-    },
-    {
-      "name": "World Bank Procurement Notices",
-      "url": "https://projects.worldbank.org/en/projects-operations/procurement"
-    },
-    {
-      "name": "African Development Bank – Tender Notices",
-      "url": "https://www.afdb.org/en/projects-and-operations/procurement"
-    },
-    {
-      "name": "ICT Authority Kenya",
-      "url": "https://icta.go.ke/tenders/"
-    },
-    {
-      "name": "EU Tenders (TED)",
-      "url": "https://ted.europa.eu/TED/search/search.do"
-    },
-    {
-      "name": "Tanzania Procurement Portal",
-      "url": "https://nest.go.tz/tenders/published-tenders"
-    }
-  ]
-  
+  {
+    "name": "UNGM",
+    "api_url": "https://api.ungm.org/notice",
+    "rss_url": "https://www.ungm.org/Public/NoticeRSS"
+  },
+  {
+    "name": "ICT Authority",
+    "url": "https://icta.go.ke/tenders/",
+    "scraper_type": "playwright"
+  },
+  {
+    "name": "EU TED",
+    "rss_url": "https://ted.europa.eu/TED/rss/en/RSS.xml"
+  },
+  {
+    "name": "EU Funding & Tenders Portal",
+    "api_url": "https://ec.europa.eu/info/funding-tenders/opportunities/data/calls.json"
+  }
+]

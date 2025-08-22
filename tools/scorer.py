@@ -24,14 +24,14 @@ class HybridTenderScorer:
                 logger.warning(f"Failed to initialize OpenAI client: {str(e)}")
                 self.openai_client = None
         
-        # Scoring weights for rule-based scoring
+        # Scoring weights for rule-based scoring (adjusted for better balance)
         self.scoring_weights = {
-            'industry_match': 0.20,
-            'location_match': 0.15,
-            'budget_match': 0.20,
-            'technical_match': 0.20,
-            'experience_match': 0.15,
-            'certification_match': 0.10
+            'industry_match': 0.25,      # Increased importance
+            'location_match': 0.10,      # Reduced importance (remote work is common)
+            'budget_match': 0.25,        # Increased importance 
+            'technical_match': 0.25,     # Increased importance
+            'experience_match': 0.10,    # Reduced (can be demonstrated in proposal)
+            'certification_match': 0.05  # Reduced (can be obtained if needed)
         }
     
     def score_tender(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -144,19 +144,33 @@ class HybridTenderScorer:
             # Prepare prompt for AI analysis
             prompt = self._create_ai_scoring_prompt(tender, company_profile)
             
-            # Call OpenAI API
-            response = self.openai_client.ChatCompletion.create(
-                model=config.SCORING_AI_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are an expert tender evaluation analyst. Analyze the tender opportunity against the company profile and provide a score from 0-100 with detailed reasoning."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=500,
-                temperature=0.3
-            )
+            # Call OpenAI API (updated for v1.0+ compatibility)
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=config.OPENAI_API_KEY)
+                response = client.chat.completions.create(
+                    model=config.SCORING_AI_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are an expert tender evaluation analyst. Analyze the tender opportunity against the company profile and provide a score from 0-100 with detailed reasoning."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=500,
+                    temperature=0.3
+                )
+                ai_response = response.choices[0].message.content
+            except ImportError:
+                # Fallback to legacy OpenAI client
+                response = self.openai_client.ChatCompletion.create(
+                    model=config.SCORING_AI_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are an expert tender evaluation analyst. Analyze the tender opportunity against the company profile and provide a score from 0-100 with detailed reasoning."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=500,
+                    temperature=0.3
+                )
             
             # Parse AI response
-            ai_response = response.choices[0].message.content
             
             # Extract score and reasoning
             score, reasoning = self._parse_ai_response(ai_response)
@@ -232,8 +246,11 @@ class HybridTenderScorer:
             return rule_result
         
         try:
-            # Calculate combined score (70% rule-based, 30% AI)
-            combined_score = int(rule_result['score'] * 0.7 + ai_result['score'] * 0.3)
+            # Calculate combined score (30% rule-based, 70% AI when AI score is higher)
+            if ai_result['score'] > rule_result['score']:
+                combined_score = int(rule_result['score'] * 0.3 + ai_result['score'] * 0.7)
+            else:
+                combined_score = int(rule_result['score'] * 0.6 + ai_result['score'] * 0.4)
             
             # Combine justifications
             combined_justification = f"Rule-based score: {rule_result['score']}/100. AI analysis: {ai_result['score']}/100. "
@@ -278,11 +295,22 @@ class HybridTenderScorer:
                any(word in company_ind for word in tender_industry.split()):
                 return 15, f"Strong industry alignment: {tender_industry} relates to {company_ind}"
         
-        # Check for technology-related matches
-        if any(tech in tender_industry.lower() for tech in ['it', 'technology', 'software', 'digital', 'cloud']):
-            return 12, f"Technology sector match: {tender_industry} aligns with IT focus"
+        # Check for technology-related matches (more generous scoring)
+        tech_keywords = ['it', 'technology', 'software', 'digital', 'cloud', 'cybersecurity', 
+                        'infrastructure', 'telecommunications', 'telecom', 'network', 'broadband',
+                        'automation', 'system', 'platform', 'database', 'security']
         
-        return 5, f"Limited industry alignment: {tender_industry} vs company focus areas"
+        for tech in tech_keywords:
+            if tech in tender_industry.lower():
+                return 18, f"Technology sector match: {tender_industry} aligns with IT/tech focus"
+        
+        # Check for related sectors that could involve IT components
+        related_sectors = ['finance', 'banking', 'government', 'healthcare', 'education']
+        for sector in related_sectors:
+            if sector in tender_industry.lower():
+                return 14, f"Related sector with IT potential: {tender_industry}"
+        
+        return 8, f"Limited industry alignment: {tender_industry} vs company focus areas"
     
     def _score_location_match(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> Tuple[int, str]:
         """Score geographical location match (0-15 points)"""
@@ -332,15 +360,19 @@ class HybridTenderScorer:
             if min_budget <= budget_value <= max_budget:
                 return 20, f"Perfect budget match: ${budget_value:,.0f} within preferred range (${min_budget:,.0f}-${max_budget:,.0f})"
             
-            # Check if budget is close to preferred range
-            if budget_value < min_budget * 0.5:
-                return 5, f"Budget too small: ${budget_value:,.0f} below minimum threshold"
+            # Check if budget is close to preferred range (more flexible scoring)
+            if budget_value < min_budget * 0.3:
+                return 8, f"Budget too small: ${budget_value:,.0f} well below minimum threshold"
+            elif budget_value < min_budget * 0.7:
+                return 15, f"Budget below preferred but manageable: ${budget_value:,.0f} vs minimum ${min_budget:,.0f}"
             elif budget_value < min_budget:
-                return 12, f"Budget below preferred range: ${budget_value:,.0f} vs minimum ${min_budget:,.0f}"
-            elif budget_value > max_budget * 2:
-                return 8, f"Budget too large: ${budget_value:,.0f} exceeds maximum threshold"
+                return 18, f"Budget slightly below preferred range: ${budget_value:,.0f} vs minimum ${min_budget:,.0f}"
+            elif budget_value > max_budget * 3:
+                return 10, f"Budget very large: ${budget_value:,.0f} exceeds capacity"
+            elif budget_value > max_budget * 1.5:
+                return 16, f"Budget above preferred but manageable: ${budget_value:,.0f} vs maximum ${max_budget:,.0f}"
             elif budget_value > max_budget:
-                return 15, f"Budget above preferred range: ${budget_value:,.0f} vs maximum ${max_budget:,.0f}"
+                return 18, f"Budget above preferred range: ${budget_value:,.0f} vs maximum ${max_budget:,.0f}"
             
         except ValueError:
             return 10, f"Budget parsing error: {tender_budget} - assigned neutral score"
