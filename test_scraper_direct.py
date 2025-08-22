@@ -1,68 +1,58 @@
 #!/usr/bin/env python3
-"""Direct test of the scraper with site configurations"""
+"""Tests for the web scraper using offline sample data."""
 
-from tools.scraper import scrape_web
 import json
+from typing import List, Dict
 
-def test_scraper_direct():
-    """Test the scraper directly with site configurations"""
-    
-    print("Testing Scraper Directly")
-    print("=" * 50)
-    
-    # Load tender sites
-    with open('data/tender_sites.json', 'r') as f:
-        tender_sites = json.load(f)
-    
-    print(f"Loaded {len(tender_sites)} tender sites")
-    
-    # Test each site individually
-    for i, site in enumerate(tender_sites):
-        print(f"\n{i+1}. Testing site: {site.get('name', 'Unknown')}")
-        print(f"   URL: {site.get('url', 'N/A')}")
-        print(f"   API URL: {site.get('api_url', 'N/A')}")
-        print(f"   RSS URL: {site.get('rss_url', 'N/A')}")
-        print(f"   Scraper Type: {site.get('scraper_type', 'auto')}")
-        
-        try:
-            # Try the main URL first
-            if site.get('url'):
-                print(f"   Testing main URL...")
-                tenders = scrape_web(site['url'], site)
-                print(f"   Main URL result: {len(tenders)} tenders")
-                if tenders:
-                    print(f"   Sample tender: {tenders[0].get('title', 'No title')[:100]}...")
-            
-            # Try API URL if available
-            elif site.get('api_url'):
-                print(f"   Testing API URL...")
-                tenders = scrape_web(site['api_url'], site)
-                print(f"   API URL result: {len(tenders)} tenders")
-                if tenders:
-                    print(f"   Sample tender: {tenders[0].get('title', 'No title')[:100]}...")
-            
-            # Try RSS URL if available
-            elif site.get('rss_url'):
-                print(f"   Testing RSS URL...")
-                tenders = scrape_web(site['rss_url'], site)
-                print(f"   RSS URL result: {len(tenders)} tenders")
-                if tenders:
-                    print(f"   Sample tender: {tenders[0].get('title', 'No title')[:100]}...")
-            
-            # If no specific URLs, try the site name as a fallback
-            else:
-                print(f"   No specific URLs found, testing with site name...")
-                # This should trigger the fallback logic in the wrapper
-                tenders = scrape_web(site['name'], site)
-                print(f"   Site name result: {len(tenders)} tenders")
-                if tenders:
-                    print(f"   Sample tender: {tenders[0].get('title', 'No title')[:100]}...")
-            
-        except Exception as e:
-            print(f"   ❌ Error: {str(e)}")
-    
-    print("\n" + "=" * 50)
-    print("Direct scraper testing completed!")
+import pytest
 
-if __name__ == "__main__":
-    test_scraper_direct()
+from tools.scraper import scrape_web, scraper
+from config import config
+
+
+@pytest.fixture
+def tender_sites() -> List[Dict]:
+    """Load tender site configurations."""
+    with open("data/tender_sites.json", "r") as f:
+        return json.load(f)
+
+
+@pytest.fixture(autouse=True)
+def use_sample_data(monkeypatch):
+    """Force scraper to use sample data and avoid network calls."""
+    monkeypatch.setattr(config, "USE_SAMPLE_DATA", True)
+    # Patch all network-dependent scraping methods to return no data.
+    for method in [
+        "_scrape_with_api_endpoint",
+        "_scrape_with_rss",
+        "_scrape_with_playwright",
+        "_scrape_with_selenium_fallback",
+        "_scrape_with_requests",
+        "_scrape_with_api_endpoints",
+        "_scrape_with_default_strategy",
+    ]:
+        monkeypatch.setattr(scraper, method, lambda *args, **kwargs: [], raising=False)
+
+
+def _get_test_url(site: Dict) -> str:
+    """Select the most appropriate URL from the site config."""
+    return site.get("url") or site.get("api_url") or site.get("rss_url") or site.get("name", "")
+
+
+def test_scrape_web_returns_valid_tenders(tender_sites):
+    """scrape_web should return non-empty tender data with required fields."""
+    required_keys = {"title", "description", "deadline", "source_url", "scraped_at"}
+
+    for site in tender_sites:
+        url = _get_test_url(site)
+        tenders = scrape_web(url, site)
+
+        # Verify a list is returned and it contains data
+        assert isinstance(tenders, list), "scrape_web should return a list"
+        assert tenders, f"No tenders returned for {site.get('name')}"
+
+        # Verify each tender has expected structure
+        for tender in tenders:
+            assert isinstance(tender, dict), "Each tender should be a dictionary"
+            missing = required_keys - tender.keys()
+            assert not missing, f"Missing keys {missing} in tender from {site.get('name')}"
