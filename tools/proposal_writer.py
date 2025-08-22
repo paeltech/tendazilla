@@ -25,6 +25,31 @@ class AIProposalWriter:
             except Exception as e:
                 logger.warning(f"Failed to initialize OpenAI client: {str(e)}")
                 self.openai_client = None
+
+    def _match_company_strengths(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Quickly match tender details with company strengths"""
+        req_text = " ".join(tender.get("requirements", [])) + " " + tender.get("description", "")
+        req_lower = req_text.lower()
+
+        def find_matches(items: List[str]) -> List[str]:
+            return [item for item in items if item.lower() in req_lower]
+
+        matches = {
+            "core_services": find_matches(company_profile.get("core_services", [])),
+            "technologies": find_matches(company_profile.get("relevant_technologies", [])),
+            "certifications": find_matches(company_profile.get("certifications", [])),
+        }
+
+        relevant_projects = []
+        for proj in company_profile.get("past_projects", []):
+            text = f"{proj.get('name', '')} {proj.get('description', '')}".lower()
+            if tender.get('industry', '').lower() in text or any(
+                req.lower() in text for req in tender.get('requirements', [])
+            ):
+                relevant_projects.append(proj)
+        matches["past_projects"] = relevant_projects
+
+        return matches
     
     def generate_proposal(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
         """
@@ -39,30 +64,32 @@ class AIProposalWriter:
         """
         try:
             logger.info(f"Generating proposal for tender: {tender.get('title', 'Unknown')}")
-            
+
+            strengths = self._match_company_strengths(tender, company_profile)
+
             # Try AI-powered generation first if available
             if self.openai_client and config.PROPOSAL_AI_ENABLED:
                 try:
-                    ai_proposal = self._generate_ai_proposal(tender, company_profile)
+                    ai_proposal = self._generate_ai_proposal(tender, company_profile, strengths)
                     if ai_proposal:
                         logger.info("AI-powered proposal generated successfully")
                         return ai_proposal
                 except Exception as e:
                     logger.warning(f"AI proposal generation failed: {str(e)}, falling back to template-based generation")
-            
+
             # Fall back to template-based generation
             logger.info("Using template-based proposal generation")
-            return self._generate_template_proposal(tender, company_profile)
+            return self._generate_template_proposal(tender, company_profile, strengths)
             
         except Exception as e:
             logger.error(f"Error generating proposal: {str(e)}")
             return f"# Error Generating Proposal\n\nAn error occurred while generating the proposal: {str(e)}"
     
-    def _generate_ai_proposal(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
+    def _generate_ai_proposal(self, tender: Dict[str, Any], company_profile: Dict[str, Any], strengths: Dict[str, Any]) -> str:
         """Generate proposal using OpenAI"""
         try:
             # Create comprehensive prompt for AI
-            prompt = self._create_ai_proposal_prompt(tender, company_profile)
+            prompt = self._create_ai_proposal_prompt(tender, company_profile, strengths)
             
             # Call OpenAI API with updated format
             try:
@@ -108,8 +135,20 @@ class AIProposalWriter:
             logger.error(f"Error in AI proposal generation: {str(e)}")
             return None
     
-    def _create_ai_proposal_prompt(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
+    def _create_ai_proposal_prompt(self, tender: Dict[str, Any], company_profile: Dict[str, Any], strengths: Dict[str, Any]) -> str:
         """Create comprehensive prompt for AI proposal generation"""
+        strength_lines = []
+        if strengths.get("core_services"):
+            strength_lines.append(f"Core Services: {', '.join(strengths['core_services'])}")
+        if strengths.get("technologies"):
+            strength_lines.append(f"Technologies: {', '.join(strengths['technologies'])}")
+        if strengths.get("certifications"):
+            strength_lines.append(f"Certifications: {', '.join(strengths['certifications'])}")
+        if strengths.get("past_projects"):
+            projects = ", ".join(p.get("name", "Project") for p in strengths["past_projects"])
+            strength_lines.append(f"Relevant Projects: {projects}")
+        strength_text = "\n".join(strength_lines)
+
         prompt = f"""
         Write a comprehensive, professional proposal for this tender opportunity. The proposal should be in markdown format and include all standard sections.
 
@@ -133,9 +172,12 @@ class AIProposalWriter:
         Team Size: {sum(company_profile.get('team_expertise', {}).values())} professionals
         Preferred Budget Range: ${company_profile.get('preferred_project_size', {}).get('min_budget', 'N/A')} - ${company_profile.get('preferred_project_size', {}).get('max_budget', 'N/A')}
 
+        RELEVANT COMPANY STRENGTHS:
+        {strength_text if strength_text else 'No direct matches found'}
+
         PROPOSAL REQUIREMENTS:
         1. Use markdown formatting throughout
-        2. Include all standard sections: Executive Summary, Company Profile, Understanding of Requirements, Proposed Solution, Technical Approach, Project Timeline, Team Structure, Relevant Experience, Risk Management, Quality Assurance, Pricing, Terms and Conditions
+        2. Include all standard sections: Executive Summary, Company Profile, Alignment with Company Strengths, Understanding of Requirements, Proposed Solution, Technical Approach, Project Timeline, Team Structure, Relevant Experience, Risk Management, Quality Assurance, Pricing, Terms and Conditions
         3. Make it specific to the tender requirements
         4. Highlight company strengths and relevant experience
         5. Include realistic project timeline and team structure
@@ -149,45 +191,50 @@ class AIProposalWriter:
         """
         return prompt
     
-    def _generate_template_proposal(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
+    def _generate_template_proposal(self, tender: Dict[str, Any], company_profile: Dict[str, Any], strengths: Dict[str, Any]) -> str:
         """Generate proposal using template-based approach"""
         try:
             # Generate proposal sections
             proposal_sections = []
-            
+
             # 1. Executive Summary
-            executive_summary = self._generate_executive_summary(tender, company_profile)
+            executive_summary = self._generate_executive_summary(tender, company_profile, strengths)
             proposal_sections.append(("## Executive Summary", executive_summary))
-            
+
             # 2. Company Profile
             company_overview = self._generate_company_overview(company_profile)
             proposal_sections.append(("## Company Profile", company_overview))
-            
-            # 3. Understanding of Requirements
+
+            # 3. Alignment with Company Strengths
+            alignment = self._generate_strengths_alignment(strengths)
+            if alignment:
+                proposal_sections.append(("## Alignment with Company Strengths", alignment))
+
+            # 4. Understanding of Requirements
             requirements_analysis = self._generate_requirements_analysis(tender)
             proposal_sections.append(("## Understanding of Requirements", requirements_analysis))
-            
-            # 4. Proposed Solution
-            proposed_solution = self._generate_proposed_solution(tender, company_profile)
+
+            # 5. Proposed Solution
+            proposed_solution = self._generate_proposed_solution(tender, company_profile, strengths)
             proposal_sections.append(("## Proposed Solution", proposed_solution))
-            
-            # 5. Technical Approach
+
+            # 6. Technical Approach
             technical_approach = self._generate_technical_approach(tender, company_profile)
             proposal_sections.append(("## Technical Approach", technical_approach))
-            
-            # 6. Project Timeline
+
+            # 7. Project Timeline
             project_timeline = self._generate_project_timeline(tender, company_profile)
             proposal_sections.append(("## Project Timeline", project_timeline))
-            
-            # 7. Team Structure
+
+            # 8. Team Structure
             team_structure = self._generate_team_structure(company_profile)
             proposal_sections.append(("## Team Structure", team_structure))
-            
-            # 8. Relevant Experience
-            relevant_experience = self._generate_relevant_experience(tender, company_profile)
+
+            # 9. Relevant Experience
+            relevant_experience = self._generate_relevant_experience(tender, company_profile, strengths)
             proposal_sections.append(("## Relevant Experience", relevant_experience))
-            
-            # 9. Risk Management
+
+            # 10. Risk Management
             risk_management = self._generate_risk_management()
             proposal_sections.append(("## Risk Management", risk_management))
             
@@ -238,28 +285,40 @@ class AIProposalWriter:
         
         return proposal + metadata
     
-    def _generate_executive_summary(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
+    def _generate_executive_summary(self, tender: Dict[str, Any], company_profile: Dict[str, Any], strengths: Dict[str, Any]) -> str:
         """Generate executive summary section"""
         company_name = company_profile.get('company_name', 'Our Company')
-        
+
         summary = f"{company_name} is pleased to submit this comprehensive proposal for the "
         summary += f"**{tender.get('title', 'tender opportunity')}**. "
-        
+
         if tender.get('budget'):
             summary += f"This project represents a {tender.get('budget')} investment in "
         else:
             summary += f"This project represents a significant investment in "
-        
+
         summary += f"{tender.get('industry', 'technology infrastructure')} that aligns perfectly with our "
         summary += f"core competencies in {', '.join(company_profile.get('core_services', ['technology solutions'])[:3])}. "
-        
+
+        strength_bits = []
+        if strengths.get('core_services'):
+            strength_bits.append(
+                ', '.join(strengths['core_services'][:2])
+            )
+        if strengths.get('certifications'):
+            strength_bits.append(
+                ', '.join(strengths['certifications'][:2])
+            )
+        if strength_bits:
+            summary += f"Our proven expertise in {' and '.join(strength_bits)} directly supports the tender objectives. "
+
         summary += f"\n\nWith {company_profile.get('years_in_operation', 7)} years of experience and "
         summary += f"a proven track record of delivering similar projects, we are confident in our ability "
         summary += f"to exceed expectations and deliver exceptional value. "
-        
+
         summary += f"Our approach combines technical expertise, industry best practices, and "
         summary += f"a deep understanding of the challenges and opportunities in this sector."
-        
+
         return summary
     
     def _generate_company_overview(self, company_profile: Dict[str, Any]) -> str:
@@ -304,9 +363,42 @@ class AIProposalWriter:
             overview += "**Notable Clients:**\n"
             for client in notable_clients[:5]:  # Limit to top 5
                 overview += f"- {client}\n"
-        
+
         return overview
-    
+
+    def _generate_strengths_alignment(self, strengths: Dict[str, Any]) -> str:
+        """Highlight how company strengths align with tender needs"""
+        if not any(strengths.values()):
+            return ""
+
+        alignment = "This section outlines the specific strengths that make our company an ideal fit for this tender.\n\n"
+
+        if strengths.get('core_services'):
+            alignment += "**Matching Core Services:**\n"
+            for svc in strengths['core_services'][:5]:
+                alignment += f"- {svc}\n"
+            alignment += "\n"
+
+        if strengths.get('technologies'):
+            alignment += "**Relevant Technologies:**\n"
+            for tech in strengths['technologies'][:5]:
+                alignment += f"- {tech}\n"
+            alignment += "\n"
+
+        if strengths.get('certifications'):
+            alignment += "**Applicable Certifications:**\n"
+            for cert in strengths['certifications'][:5]:
+                alignment += f"- {cert}\n"
+            alignment += "\n"
+
+        if strengths.get('past_projects'):
+            alignment += "**Related Past Projects:**\n"
+            for proj in strengths['past_projects'][:3]:
+                alignment += f"- {proj.get('name', 'Project')}\n"
+            alignment += "\n"
+
+        return alignment
+
     def _generate_requirements_analysis(self, tender: Dict[str, Any]) -> str:
         """Generate requirements analysis section"""
         analysis = "Based on our thorough review of the tender documentation, we have identified "
@@ -345,13 +437,13 @@ class AIProposalWriter:
         
         return analysis
     
-    def _generate_proposed_solution(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
+    def _generate_proposed_solution(self, tender: Dict[str, Any], company_profile: Dict[str, Any], strengths: Dict[str, Any]) -> str:
         """Generate proposed solution section"""
         solution = "Our proposed solution is designed to address all identified requirements "
         solution += "while leveraging our proven expertise and best practices. "
         solution += "We will deliver a comprehensive, scalable, and future-ready solution "
         solution += "that exceeds expectations.\n\n"
-        
+
         # Core approach
         solution += "**Our Approach:**\n"
         solution += "1. **Discovery & Analysis:** Comprehensive requirements gathering and stakeholder engagement\n"
@@ -360,15 +452,26 @@ class AIProposalWriter:
         solution += "4. **Testing & Quality Assurance:** Rigorous testing protocols and quality gates\n"
         solution += "5. **Deployment & Training:** Smooth deployment with comprehensive user training\n"
         solution += "6. **Support & Maintenance:** Ongoing support and continuous improvement\n\n"
-        
+
         # Technology stack
-        relevant_technologies = company_profile.get('relevant_technologies', [])
+        relevant_technologies = strengths.get('technologies') or company_profile.get('relevant_technologies', [])
         if relevant_technologies:
             solution += "**Proposed Technology Stack:**\n"
             for tech in relevant_technologies[:8]:  # Limit to top 8
                 solution += f"- {tech}\n"
             solution += "\n"
-        
+
+        # Highlight strengths
+        if strengths.get('core_services') or strengths.get('certifications'):
+            solution += "**Leveraging Our Strengths:**\n"
+            if strengths.get('core_services'):
+                solution += f"- Expertise in {', '.join(strengths['core_services'][:3])}\n"
+            if strengths.get('technologies'):
+                solution += f"- Proven with {', '.join(relevant_technologies[:5])}\n"
+            if strengths.get('certifications'):
+                solution += f"- Certified in {', '.join(strengths['certifications'][:3])}\n"
+            solution += "\n"
+
         # Key benefits
         solution += "**Key Benefits of Our Solution:**\n"
         solution += "- **Scalability:** Built to grow with your business needs\n"
@@ -376,7 +479,7 @@ class AIProposalWriter:
         solution += "- **Reliability:** Proven technologies and robust architecture\n"
         solution += "- **Cost-Effectiveness:** Optimized resource utilization and long-term value\n"
         solution += "- **Innovation:** Latest technologies and industry best practices"
-        
+
         return solution
     
     def _generate_technical_approach(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
@@ -519,18 +622,18 @@ class AIProposalWriter:
         
         return team
     
-    def _generate_relevant_experience(self, tender: Dict[str, Any], company_profile: Dict[str, Any]) -> str:
+    def _generate_relevant_experience(self, tender: Dict[str, Any], company_profile: Dict[str, Any], strengths: Dict[str, Any]) -> str:
         """Generate relevant experience section"""
         experience = "Our company has successfully delivered numerous projects similar to "
         experience += f"the **{tender.get('title', 'current opportunity')}**. "
         experience += "Below are highlights of our most relevant experience that demonstrate "
         experience += "our capability to deliver this project successfully.\n\n"
-        
+
         # Past projects
-        past_projects = company_profile.get('past_projects', [])
+        past_projects = strengths.get('past_projects') or company_profile.get('past_projects', [])
         if past_projects:
             experience += "**Relevant Past Projects:**\n\n"
-            
+
             for i, project in enumerate(past_projects[:3], 1):  # Top 3 projects
                 experience += f"**Project {i}: {project.get('name', 'Project Name')}**\n"
                 experience += f"- **Client:** {project.get('client', 'Confidential')}\n"
@@ -538,7 +641,7 @@ class AIProposalWriter:
                 experience += f"- **Budget:** {project.get('budget', 'Budget not specified')}\n"
                 experience += f"- **Duration:** {project.get('duration', 'Duration not specified')}\n"
                 experience += f"- **Outcome:** {project.get('outcome', 'Successful delivery')}\n\n"
-        
+
         # Success metrics
         tender_history = company_profile.get('tender_response_history', {})
         if tender_history:
@@ -546,7 +649,7 @@ class AIProposalWriter:
             experience += f"- Total tender responses: {tender_history.get('total_responses', 0)}\n"
             experience += f"- Successful wins: {tender_history.get('wins', 0)}\n"
             experience += f"- Win rate: {tender_history.get('win_rate', 'N/A')}\n\n"
-        
+
         # Client testimonials
         experience += "**Client Satisfaction:**\n"
         experience += "Our clients consistently rate our services highly for:\n"
@@ -554,7 +657,7 @@ class AIProposalWriter:
         experience += "- Project delivery on time and within budget\n"
         experience += "- Quality of deliverables and support\n"
         experience += "- Long-term partnership and value creation"
-        
+
         return experience
     
     def _generate_risk_management(self) -> str:
