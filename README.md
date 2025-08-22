@@ -13,7 +13,7 @@ Tendazilla is a sophisticated, AI-powered tender management system that automate
 ### 🎯 **Hybrid Tender Scoring**
 - **Rule-Based Scoring**: Comprehensive evaluation using industry, location, budget, and technical criteria
 - **AI-Powered Analysis**: OpenAI integration for intelligent tender assessment
-- **Combined Scoring**: 70% rule-based + 30% AI analysis for optimal results
+- **Combined Scoring**: Dynamically blends rule-based and AI evaluations, weighting whichever scores higher—70% AI / 30% rule-based when the AI score leads, otherwise 60% rule-based / 40% AI
 - **Detailed Justifications**: Clear reasoning for each scoring decision
 
 ### 📝 **AI-Powered Proposal Generation**
