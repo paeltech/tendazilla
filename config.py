@@ -21,6 +21,11 @@ class Config:
     COMPANY_APPROVER_EMAIL: str = os.getenv('COMPANY_APPROVER_EMAIL', 'approver@example.com')
     COMPANY_NAME: str = os.getenv('COMPANY_NAME', 'ADB Technology')
     
+    # Email Recipients Configuration
+    EMAIL_RECIPIENTS: list = [email.strip() for email in os.getenv('EMAIL_RECIPIENTS', 'pmandele9@gmail.com,proposals@company.com,management@company.com').split(',') if email.strip()]
+    EMAIL_RECIPIENTS_CC: list = [email.strip() for email in os.getenv('EMAIL_RECIPIENTS_CC', '').split(',') if email.strip()] if os.getenv('EMAIL_RECIPIENTS_CC') else []
+    EMAIL_RECIPIENTS_BCC: list = [email.strip() for email in os.getenv('EMAIL_RECIPIENTS_BCC', '').split(',') if email.strip()] if os.getenv('EMAIL_RECIPIENTS_BCC') else []
+    
     # Scraping Configuration
     SCRAPING_TIMEOUT: int = int(os.getenv('SCRAPING_TIMEOUT', '30'))
     SCRAPING_MAX_RETRIES: int = int(os.getenv('SCRAPING_MAX_RETRIES', '3'))

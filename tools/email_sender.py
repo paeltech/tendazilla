@@ -50,6 +50,73 @@ class EmailSender:
         Sends an email to internal stakeholders with the tender summary and proposal.
         
         Args:
+            to (str): Email address of the recipient (can be single email or list of emails)
+            subject (str): Subject line for the email
+            body (str): Body content of the email
+            proposal (str): The markdown-formatted proposal to attach or embed
+            
+        Returns:
+            str: Email sent confirmation or error message
+        """
+        logger.info(f"send_email called with to={to} (type: {type(to)})")
+        
+        # Handle multiple recipients
+        if isinstance(to, list):
+            logger.info(f"Detected list of recipients: {to}")
+            return self.send_email_multiple(to, subject, body, proposal)
+        else:
+            logger.info(f"Detected single recipient: {to}")
+            return self._send_single_email(to, subject, body, proposal)
+    
+    def send_email_multiple(self, recipients: List[str], subject: str, body: str, proposal: str = None) -> str:
+        """
+        Sends emails to multiple recipients with the tender summary and proposal.
+        
+        Args:
+            recipients (List[str]): List of email addresses
+            subject (str): Subject line for the email
+            body (str): Body content of the email
+            proposal (str): The markdown-formatted proposal to attach or embed
+            
+        Returns:
+            str: Summary of email sending results
+        """
+        try:
+            logger.info(f"Sending emails to {len(recipients)} recipients: {', '.join(recipients)}")
+            
+            results = []
+            successful_sends = 0
+            failed_sends = 0
+            
+            for recipient in recipients:
+                try:
+                    result = self._send_single_email(recipient, subject, body, proposal)
+                    if "successfully" in result.lower() or "queued" in result.lower():
+                        successful_sends += 1
+                        results.append(f"✅ {recipient}: {result}")
+                    else:
+                        failed_sends += 1
+                        results.append(f"❌ {recipient}: {result}")
+                except Exception as e:
+                    failed_sends += 1
+                    results.append(f"❌ {recipient}: Error - {str(e)}")
+                    logger.error(f"Error sending to {recipient}: {str(e)}")
+            
+            summary = f"Email sending completed: {successful_sends} successful, {failed_sends} failed"
+            logger.info(summary)
+            
+            return f"{summary}\n\nDetailed Results:\n" + "\n".join(results)
+            
+        except Exception as e:
+            error_msg = f"Error in bulk email sending: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
+    
+    def _send_single_email(self, to: str, subject: str, body: str, proposal: str = None) -> str:
+        """
+        Internal method to send a single email.
+        
+        Args:
             to (str): Email address of the recipient
             subject (str): Subject line for the email
             body (str): Body content of the email
@@ -265,14 +332,15 @@ Contact: {config.COMPANY_APPROVER_EMAIL}
         
         return text
     
-    def send_tender_notification(self, tender: Dict[str, Any], proposal: str, score: int = None) -> str:
+    def send_tender_notification(self, tender: Dict[str, Any], proposal: str, score: int = None, recipients: List[str] = None) -> str:
         """
-        Send a comprehensive tender notification email
+        Send a comprehensive tender notification email to multiple recipients
         
         Args:
             tender (Dict[str, Any]): Tender details
             proposal (str): Generated proposal
             score (int): Tender score if available
+            recipients (List[str]): List of email addresses to send to. If None, uses default from config
             
         Returns:
             str: Email sent confirmation
@@ -283,9 +351,25 @@ Contact: {config.COMPANY_APPROVER_EMAIL}
             
             body = self._create_tender_notification_body(tender, score)
             
-            # Send email
+            # Determine recipients
+            if recipients is None:
+                # Use EMAIL_RECIPIENTS from config, or fallback to COMPANY_APPROVER_EMAIL
+                recipients = getattr(config, 'EMAIL_RECIPIENTS', [])
+                if not recipients:
+                    # Fallback to single approver email
+                    default_recipient = getattr(config, 'COMPANY_APPROVER_EMAIL', 'noreply@example.com')
+                    recipients = [default_recipient]
+                logger.info(f"Using configured recipients: {recipients}")
+            elif isinstance(recipients, str):
+                # Convert single email to list
+                recipients = [recipients]
+                logger.info(f"Converted single email to list: {recipients}")
+            
+            logger.info(f"Final recipients list: {recipients}")
+            
+            # Send email to all recipients
             return self.send_email(
-                to=config.COMPANY_APPROVER_EMAIL,
+                to=recipients,
                 subject=subject,
                 body=body,
                 proposal=proposal
@@ -407,6 +491,29 @@ For questions or assistance, please contact the business development team.
                 
         except Exception as e:
             return f"❌ Email configuration test failed: {str(e)}"
+    
+    def test_multiple_recipients(self) -> str:
+        """Test sending emails to multiple recipients"""
+        try:
+            logger.info("Testing multiple recipient email functionality...")
+            
+            # Get recipients from config
+            recipients = getattr(config, 'EMAIL_RECIPIENTS', [])
+            if not recipients:
+                recipients = ['test1@example.com', 'test2@example.com']
+            
+            # Test sending to multiple recipients
+            test_result = self.send_email(
+                to=recipients,
+                subject="Test Multiple Recipients - Tendazilla System",
+                body="This is a test email to verify that the system can send to multiple recipients simultaneously.",
+                proposal="Test proposal content"
+            )
+            
+            return f"✅ Multiple recipient test completed: {test_result}"
+            
+        except Exception as e:
+            return f"❌ Multiple recipient test failed: {str(e)}"
 
 # Global email sender instance
 email_sender = EmailSender()
@@ -415,9 +522,9 @@ def send_email(to: str, subject: str, body: str, proposal: str = None) -> str:
     """Main email sending function for external use"""
     return email_sender.send_email(to, subject, body, proposal)
 
-def send_tender_notification(tender: Dict[str, Any], proposal: str, score: int = None) -> str:
+def send_tender_notification(tender: Dict[str, Any], proposal: str, score: int = None, recipients: List[str] = None) -> str:
     """Main tender notification function for external use"""
-    return email_sender.send_tender_notification(tender, proposal, score)
+    return email_sender.send_tender_notification(tender, proposal, score, recipients)
 
 def send_batch_notifications(tenders: List[Dict[str, Any]], proposals: List[str], scores: List[int] = None) -> List[str]:
     """Main batch notification function for external use"""
@@ -426,3 +533,7 @@ def send_batch_notifications(tenders: List[Dict[str, Any]], proposals: List[str]
 def test_email_configuration() -> str:
     """Main email configuration test function for external use"""
     return email_sender.test_email_configuration()
+
+def test_multiple_recipients() -> str:
+    """Main multiple recipient test function for external use"""
+    return email_sender.test_multiple_recipients()

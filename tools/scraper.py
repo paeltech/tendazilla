@@ -1,6 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 import time
 import re
 from datetime import datetime
@@ -281,32 +284,78 @@ class TenderScraper:
         try:
             tender = {}
             
-            # Extract title
-            title_elem = element.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'strong', 'b'])
+            # Extract title - try multiple selectors
+            title_selectors = [
+                'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 
+                'a[href*="tender"]', 'a[href*="notice"]', 'a[href*="procurement"]',
+                'strong', 'b', '.title', '.tender-title', '.notice-title'
+            ]
+            
+            title_elem = None
+            for selector in title_selectors:
+                title_elem = element.find(selector)
+                if title_elem and title_elem.get_text(strip=True):
+                    break
+            
             if title_elem:
                 tender['title'] = title_elem.get_text(strip=True)
             
-            # Extract description
-            desc_elem = element.find(['p', 'span', 'div'])
+            # Extract description - try multiple approaches
+            desc_elem = element.find(['p', 'span', 'div', '.description', '.summary', '.content'])
             if desc_elem:
                 tender['description'] = desc_elem.get_text(strip=True)[:500]
             
-            # Extract deadline
+            # Extract deadline with more patterns
             deadline_text = element.get_text()
-            deadline_match = re.search(r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})', deadline_text)
-            if deadline_match:
-                tender['deadline'] = deadline_match.group(1)
+            deadline_patterns = [
+                r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',  # DD/MM/YY or DD-MM-YY
+                r'(\d{4}[/-]\d{1,2}[/-]\d{1,2})',  # YYYY/MM/DD or YYYY-MM-DD
+                r'(Deadline|Due|Closing|Submission).*?(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+                r'(Deadline|Due|Closing|Submission).*?(\d{4}[/-]\d{1,2}[/-]\d{1,2})'
+            ]
             
-            # Extract budget
-            budget_match = re.search(r'(\$|USD|EUR|GBP)\s*([\d,]+(?:\.\d{2})?)', deadline_text, re.I)
-            if budget_match:
-                tender['budget'] = f"{budget_match.group(1)} {budget_match.group(2)}"
+            for pattern in deadline_patterns:
+                deadline_match = re.search(pattern, deadline_text, re.I)
+                if deadline_match:
+                    tender['deadline'] = deadline_match.group(1) if deadline_match.groups()[0] in ['Deadline', 'Due', 'Closing', 'Submission'] else deadline_match.group(1)
+                    break
             
-            # Extract location
-            location_patterns = ['Kenya', 'Nairobi', 'Tanzania', 'Dar es Salaam', 'Africa', 'East Africa']
+            # Extract budget with more patterns
+            budget_patterns = [
+                r'(\$|USD|EUR|GBP|KES|TZS)\s*([\d,]+(?:\.\d{2})?)',
+                r'Budget.*?(\$|USD|EUR|GBP|KES|TZS)\s*([\d,]+(?:\.\d{2})?)',
+                r'Value.*?(\$|USD|EUR|GBP|KES|TZS)\s*([\d,]+(?:\.\d{2})?)'
+            ]
+            
+            for pattern in budget_patterns:
+                budget_match = re.search(pattern, deadline_text, re.I)
+                if budget_match:
+                    tender['budget'] = f"{budget_match.group(1)} {budget_match.group(2)}"
+                    break
+            
+            # Extract location with more patterns
+            location_patterns = [
+                'Kenya', 'Nairobi', 'Mombasa', 'Kisumu', 'Nakuru',
+                'Tanzania', 'Dar es Salaam', 'Dodoma', 'Arusha', 'Mwanza',
+                'Africa', 'East Africa', 'Sub-Saharan Africa'
+            ]
+            
             for pattern in location_patterns:
                 if pattern.lower() in deadline_text.lower():
                     tender['location'] = pattern
+                    break
+            
+            # Extract industry/sector
+            industry_patterns = [
+                'Information Technology', 'IT', 'ICT', 'Technology',
+                'Software', 'Hardware', 'Cloud', 'Digital', 'Telecommunications',
+                'Infrastructure', 'Construction', 'Engineering', 'Healthcare',
+                'Education', 'Finance', 'Banking', 'Agriculture'
+            ]
+            
+            for pattern in industry_patterns:
+                if pattern.lower() in deadline_text.lower():
+                    tender['industry'] = pattern
                     break
             
             # Set default values
@@ -408,13 +457,13 @@ class TenderScraper:
         for item in data:
             try:
                 tender = {
-                    'title': item.get('title', item.get('name', item.get('description', ''))[:200],
-                    'description': item.get('description', item.get('summary', ''))[:500],
-                    'deadline': item.get('deadline', item.get('closing_date', item.get('due_date', ''))),
-                    'budget': item.get('budget', item.get('value', item.get('amount', ''))),
-                    'location': item.get('location', item.get('country', item.get('region', ''))),
-                    'industry': item.get('industry', item.get('sector', 'Information Technology')),
-                    'requirements': item.get('requirements', item.get('criteria', [])),
+                    'title': item.get('title') or item.get('name') or item.get('description', '')[:200],
+                    'description': item.get('description') or item.get('summary', '')[:500],
+                    'deadline': item.get('deadline') or item.get('closing_date') or item.get('due_date', ''),
+                    'budget': item.get('budget') or item.get('value') or item.get('amount', ''),
+                    'location': item.get('location') or item.get('country') or item.get('region', ''),
+                    'industry': item.get('industry') or item.get('sector', 'Information Technology'),
+                    'requirements': item.get('requirements') or item.get('criteria', []),
                     'source_url': source_url,
                     'scraped_at': datetime.now().isoformat()
                 }

@@ -1,4 +1,5 @@
-from crewai import Crew, Agent, Task, Tool
+from crewai import Crew, Agent, Task
+from crewai.tools.base_tool import Tool
 from tools.scraper import scrape_web
 from tools.scorer import score_tender
 from tools.proposal_writer import generate_proposal
@@ -39,26 +40,162 @@ class TendazillaCrew:
         )
     
     def _initialize_tools(self):
-        """Initialize all tools"""
+        """Initialize all tools with CrewAI-compatible wrappers"""
+        
+        def scrape_web_wrapper(args, **kwargs):
+            """Wrapper for scrape_web function to handle CrewAI calling convention"""
+            if isinstance(args, dict) and 'url' in args:
+                return scrape_web(args['url'])
+            elif isinstance(args, str):
+                return scrape_web(args)
+            else:
+                # Try to extract URL from args
+                url = str(args) if args else "https://example.com"
+                return scrape_web(url)
+        
+        def score_tender_wrapper(args, **kwargs):
+            """Wrapper for score_tender function to handle CrewAI calling convention"""
+            # Load company profile for scoring
+            try:
+                with open('data/company_profile.json') as f:
+                    company_profile = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading company profile: {str(e)}")
+                company_profile = {}
+            
+            # Handle different argument formats
+            if isinstance(args, dict):
+                # If args contains tender data, use it
+                if 'tender' in args:
+                    return score_tender(args['tender'], company_profile)
+                elif 'title' in args or 'description' in args:
+                    # Create a tender object from the args
+                    tender = {
+                        'title': args.get('title', 'Generic Tender'),
+                        'description': args.get('description', ''),
+                        'requirements': args.get('requirements', []),
+                        'budget': args.get('budget', ''),
+                        'deadline': args.get('deadline', ''),
+                        'location': args.get('location', ''),
+                        'industry': args.get('industry', 'Information Technology')
+                    }
+                    return score_tender(tender, company_profile)
+                else:
+                    # Try to use args as tender data
+                    return score_tender(args, company_profile)
+            else:
+                # Create a generic tender object
+                tender = {
+                    'title': 'Generic Tender Opportunity',
+                    'description': str(args) if args else 'Standard tender requirements',
+                    'requirements': [],
+                    'budget': '',
+                    'deadline': '',
+                    'location': '',
+                    'industry': 'Information Technology'
+                }
+                return score_tender(tender, company_profile)
+        
+        def generate_proposal_wrapper(args, **kwargs):
+            """Wrapper for generate_proposal function to handle CrewAI calling convention"""
+            # Load company profile for the proposal generation
+            try:
+                with open('data/company_profile.json') as f:
+                    company_profile = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading company profile: {str(e)}")
+                company_profile = {}
+            
+            # Handle different argument formats
+            if isinstance(args, dict):
+                # If args contains tender data, use it
+                if 'tender' in args:
+                    return generate_proposal(args['tender'], company_profile)
+                elif 'title' in args or 'description' in args:
+                    # Create a tender object from the args
+                    tender = {
+                        'title': args.get('title', 'Generic Tender'),
+                        'description': args.get('description', ''),
+                        'requirements': args.get('requirements', []),
+                        'budget': args.get('budget', ''),
+                        'deadline': args.get('deadline', ''),
+                        'location': args.get('location', ''),
+                        'industry': args.get('industry', 'Information Technology')
+                    }
+                    return generate_proposal(tender, company_profile)
+                else:
+                    # Try to use args as tender data
+                    return generate_proposal(args, company_profile)
+            else:
+                # Create a generic tender object
+                tender = {
+                    'title': 'Generic Tender Opportunity',
+                    'description': str(args) if args else 'Standard tender requirements',
+                    'requirements': [],
+                    'budget': '',
+                    'deadline': '',
+                    'location': '',
+                    'industry': 'Information Technology'
+                }
+                return generate_proposal(tender, company_profile)
+        
+        def send_tender_notification_wrapper(args, **kwargs):
+            """Wrapper for send_tender_notification function to handle CrewAI calling convention"""
+            # Handle different argument formats
+            if isinstance(args, dict):
+                # Extract parameters from args
+                tender = args.get('tender', {})
+                proposal = args.get('proposal', '')
+                recipients = args.get('recipients', [])  # Can be list or single email
+                
+                # Handle different recipient formats
+                if isinstance(recipients, str):
+                    recipients = [recipients]
+                elif not recipients:
+                    # Use recipients from config
+                    from config import config
+                    recipients = config.EMAIL_RECIPIENTS
+                    if not recipients:
+                        # Fallback to default recipients
+                        recipients = [
+                            'pmandele9@gmail.com',
+                            'proposals@company.com', 
+                            'management@company.com'
+                        ]
+                
+                return send_tender_notification(
+                    tender=tender,
+                    proposal=proposal,
+                    recipients=recipients
+                )
+            else:
+                # Create default parameters
+                tender = {'title': 'Generic Tender', 'description': str(args) if args else ''}
+                return send_tender_notification(
+                    tender=tender,
+                    proposal='Generic proposal content',
+                    recipients=['noreply@example.com']
+                )
+        
         return {
             'scrape_web': Tool(
                 name='scrape_web',
-                func=scrape_web,
+                func=scrape_web_wrapper,
                 description="Scrapes tender listings from a specific portal URL. Returns a list of structured tender opportunities."
             ),
             'score_tender': Tool(
                 name='score_tender',
-                func=score_tender,
+                func=score_tender_wrapper,
                 description="Evaluates a tender opportunity against company profile and returns a confidence score and reasoning."
             ),
             'generate_proposal': Tool(
                 name='generate_proposal',
-                func=generate_proposal,
+                func=generate_proposal_wrapper,
                 description="Generates a full proposal in markdown format based on the tender and company profile."
             ),
             'send_tender_notification': Tool(
                 name='send_tender_notification',
-                func=send_tender_notification,
+                func=send_tender_notification_wrapper,
                 description="Sends a comprehensive tender notification email with proposal to internal approvers."
             )
         }
@@ -119,10 +256,12 @@ class TendazillaCrew:
         """Initialize all tasks with their dependencies and expected outputs"""
         return [
             Task(
-                name='ScrapeTenderSites',
                 description="""Crawl tender portals and return structured tender metadata. 
                 Use multiple scraping strategies to ensure maximum coverage. Focus on sites that are 
-                most relevant to our industry focus areas.""",
+                most relevant to our industry focus areas. You have access to multiple tender sites including government portals, 
+                international organizations, and industry-specific platforms. Prioritize sites that 
+                align with our geographic focus (East Africa) and industry expertise (IT, Cloud, 
+                Digital Transformation).""",
                 agent=self.agents[0],  # TenderDiscoveryAgent
                 expected_output="""A comprehensive list of tender objects in JSON format, each containing:
                 - title: Tender title
@@ -133,17 +272,15 @@ class TendazillaCrew:
                 - industry: Industry sector
                 - location: Geographic location
                 - source_url: Source website
-                - scraped_at: Timestamp of scraping""",
-                context="""You have access to multiple tender sites including government portals, 
-                international organizations, and industry-specific platforms. Prioritize sites that 
-                align with our geographic focus (East Africa) and industry expertise (IT, Cloud, 
-                Digital Transformation)."""
+                - scraped_at: Timestamp of scraping"""
             ),
             Task(
-                name='ScoreTenders',
                 description="""Analyze tender metadata and score win-likelihood using hybrid approach. 
                 Apply both rule-based scoring and AI-powered analysis to evaluate each tender against 
-                our company profile. Only pass tenders scoring 50 or higher.""",
+                our company profile. Only pass tenders scoring 50 or higher. Use our comprehensive company profile including industry focus, core services, 
+                certifications, team expertise, past projects, and preferred project size to evaluate 
+                each tender. Consider both quantitative factors (budget, timeline) and qualitative 
+                factors (industry alignment, technical fit).""",
                 agent=self.agents[1],  # EligibilityScoringAgent
                 expected_output="""List of tender objects with added confidence scores and detailed justifications. 
                 Each scored tender should include:
@@ -151,16 +288,16 @@ class TendazillaCrew:
                 - justification: Detailed reasoning for the score
                 - detailed_scores: Breakdown by scoring criteria
                 - scoring_method: Method used (rule-based, AI-powered, or hybrid)""",
-                context="""Use our comprehensive company profile including industry focus, core services, 
-                certifications, team expertise, past projects, and preferred project size to evaluate 
-                each tender. Consider both quantitative factors (budget, timeline) and qualitative 
-                factors (industry alignment, technical fit)."""
+
             ),
             Task(
-                name='GenerateProposals',
                 description="""Write complete proposal drafts for high-confidence tenders. 
                 Use AI-powered generation when possible, with fallback to sophisticated templates. 
-                Ensure proposals address all tender requirements and showcase company capabilities.""",
+                Ensure proposals address all tender requirements and showcase company capabilities. 
+                Leverage our company's proven track record, technical expertise, and past 
+                successful projects to create compelling proposals. Ensure each proposal is tailored 
+                to the specific tender requirements while maintaining professional standards and 
+                competitive positioning.""",
                 agent=self.agents[2],  # ProposalWriterAgent
                 expected_output="""Markdown-formatted proposals tied to each tender, including all standard sections:
                 - Executive Summary
@@ -175,16 +312,15 @@ class TendazillaCrew:
                 - Quality Assurance
                 - Pricing
                 - Terms and Conditions""",
-                context="""Leverage our company's proven track record, technical expertise, and past 
-                successful projects to create compelling proposals. Ensure each proposal is tailored 
-                to the specific tender requirements while maintaining professional standards and 
-                competitive positioning."""
+
             ),
             Task(
-                name='NotifyApprover',
                 description="""Format and email the tender summary and proposal to internal approvers. 
                 Create comprehensive notifications that include all relevant information for decision-making. 
-                Ensure the email is professional, actionable, and includes clear next steps.""",
+                Ensure the email is professional, actionable, and includes clear next steps. 
+                You are communicating with internal business development and approval teams. 
+                They need clear, concise information to make informed decisions about tender opportunities. 
+                Include all relevant context, scoring results, and clear next steps for each tender.""",
                 agent=self.agents[3],  # EmailNotificationAgent
                 expected_output="""Email sent confirmation with details of what was sent, including:
                 - Recipient email address
@@ -192,19 +328,18 @@ class TendazillaCrew:
                 - Content summary
                 - Proposal attachment status
                 - Delivery confirmation""",
-                context="""You are communicating with internal business development and approval teams. 
-                They need clear, concise information to make informed decisions about tender opportunities. 
-                Include all relevant context, scoring results, and clear next steps for each tender."""
+
             )
         ]
     
-    def run_tender_processing(self, tender_sites: List[Dict[str, str]] = None, company_profile: Dict[str, Any] = None):
+    def run_tender_processing(self, tender_sites: List[Dict[str, str]] = None, company_profile: Dict[str, Any] = None, use_sample_data: bool = False):
         """
         Run the complete tender processing workflow
         
         Args:
             tender_sites: List of tender sites to scrape (optional, will use default if not provided)
             company_profile: Company profile data (optional, will use default if not provided)
+            use_sample_data: If True, use sample data instead of web scraping
         """
         try:
             logger.info("Starting Tendazilla tender processing workflow...")
@@ -220,11 +355,38 @@ class TendazillaCrew:
                     tender_sites = json.load(f)
                 logger.info("Loaded tender sites from data/tender_sites.json")
             
-            # Execute the crew workflow
-            result = self.crew.kickoff()
-            
-            logger.info("Tender processing workflow completed successfully")
-            return result
+            if use_sample_data:
+                logger.info("Using sample data for testing - skipping web scraping")
+                # Create sample result for testing
+                sample_result = {
+                    "status": "success",
+                    "message": "Sample data mode - no actual web scraping performed",
+                    "company_profile": company_profile,
+                    "tender_sites": tender_sites,
+                    "sample_tenders": [
+                        {
+                            "title": "Cloud Migration Services for Government Agency",
+                            "description": "Seeking vendors to help migrate legacy systems to cloud infrastructure with security compliance requirements.",
+                            "deadline": "2025-02-15",
+                            "budget": "USD 250,000",
+                            "requirements": ["AWS Certified", "ISO 27001", "3+ similar projects"],
+                            "industry": "Information Technology",
+                            "location": "Kenya",
+                            "source_url": "https://sample.gov.ke/tenders/cloud-migration",
+                            "scraped_at": "2025-01-20T10:00:00"
+                        }
+                    ]
+                }
+                return sample_result
+            else:
+                # Execute the full CrewAI workflow with real scraping
+                logger.info("Starting full CrewAI workflow with real web scraping...")
+                
+                # Execute the crew workflow - this will run all agents in sequence
+                result = self.crew.kickoff()
+                
+                logger.info("Full CrewAI workflow completed successfully")
+                return result
             
         except Exception as e:
             logger.error(f"Error in tender processing workflow: {str(e)}")
@@ -373,7 +535,10 @@ def main():
         
         # Run the main workflow
         logger.info("Running main tender processing workflow...")
-        result = tendazilla.run_tender_processing()
+        
+        # Run with real web scraping
+        logger.info("Running with real web scraping...")
+        result = tendazilla.run_tender_processing(use_sample_data=False)
         
         logger.info("Tendazilla workflow completed successfully!")
         return result

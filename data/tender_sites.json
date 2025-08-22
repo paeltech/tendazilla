@@ -22,6 +22,10 @@
     {
       "name": "EU Tenders (TED)",
       "url": "https://ted.europa.eu/TED/search/search.do"
+    },
+    {
+      "name": "Tanzania Procurement Portal",
+      "url": "https://nest.go.tz/tenders/published-tenders"
     }
   ]
   
