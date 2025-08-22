@@ -114,9 +114,22 @@ class HybridTenderScorer:
             justifications.append(certification_justification)
             
             # Calculate weighted total score
-            total_score = sum(scores[key] * self.scoring_weights[key] for key in scores)
-            total_score = int(total_score)
-            
+            max_scores = {
+                'industry_match': 20,
+                'location_match': 15,
+                'budget_match': 20,
+                'technical_match': 20,
+                'experience_match': 15,
+                'certification_match': 10,
+            }
+
+            total_score = 0.0
+            for key, raw_score in scores.items():
+                max_score = max_scores.get(key, 20)
+                normalized = (raw_score / max_score) * self.scoring_weights[key]
+                total_score += normalized
+            total_score = int(total_score * 100)
+
             # Generate overall justification
             overall_justification = self._generate_overall_justification(scores, justifications, total_score)
             
