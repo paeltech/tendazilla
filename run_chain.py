@@ -593,8 +593,14 @@ Format: [{"title": "...", "description": "...", "score": 85, "justification": ".
         try:
             logger.info("Processing workflow results...")
             
-            # Extract tender data from workflow result
-            workflow_tenders = self._extract_tenders_from_workflow_result(result)
+            # Use pre-scraped tender data directly instead of trying to extract from workflow result
+            # This ensures we process all the actual scraped tenders
+            workflow_tenders = getattr(self, '_pre_scraped_tenders', [])
+            if workflow_tenders:
+                logger.info(f"Using {len(workflow_tenders)} pre-scraped tenders for processing")
+            else:
+                logger.warning("No pre-scraped tenders available, attempting to extract from workflow result")
+                workflow_tenders = self._extract_tenders_from_workflow_result(result)
             
             # Score the tenders
             scored_tenders = self._score_all_tenders(workflow_tenders, company_profile)
@@ -602,9 +608,14 @@ Format: [{"title": "...", "description": "...", "score": 85, "justification": ".
             # Save scored tenders to session folder
             self._save_scored_tenders(scored_tenders)
             
-            # Generate proposals for qualified tenders (score >= 30)
+            # Generate proposals only for the top 2 highest-scoring tenders to minimize testing burden
             qualified_tenders = [t for t in scored_tenders if t.get('score', 0) >= 30]
-            proposals = self._generate_proposals_for_tenders(qualified_tenders, company_profile)
+            
+            # Sort by score and take only top 2
+            top_tenders = sorted(qualified_tenders, key=lambda x: x.get('score', 0), reverse=True)[:2]
+            
+            logger.info(f"Generating proposals for top {len(top_tenders)} tenders (scores: {[t.get('score', 0) for t in top_tenders]})")
+            proposals = self._generate_proposals_for_tenders(top_tenders, company_profile)
             
             # Save proposals to session folder
             self._save_proposals(proposals)
@@ -680,12 +691,24 @@ Format: [{"title": "...", "description": "...", "score": 85, "justification": ".
             # If we can't extract tenders, fall back to the pre-scraped data
             logger.warning(f"Could not extract tenders from result type: {type(result)}")
             logger.info("Falling back to pre-scraped tender data")
-            return getattr(self, '_pre_scraped_tenders', [])
+            pre_scraped = getattr(self, '_pre_scraped_tenders', [])
+            if pre_scraped:
+                logger.info(f"Using {len(pre_scraped)} pre-scraped tenders for processing")
+                return pre_scraped
+            else:
+                logger.warning("No pre-scraped tenders available")
+                return []
             
         except Exception as e:
             logger.error(f"Error extracting tenders from workflow result: {str(e)}")
             # Fall back to pre-scraped data
-            return getattr(self, '_pre_scraped_tenders', [])
+            pre_scraped = getattr(self, '_pre_scraped_tenders', [])
+            if pre_scraped:
+                logger.info(f"Using {len(pre_scraped)} pre-scraped tenders for processing after error")
+                return pre_scraped
+            else:
+                logger.warning("No pre-scraped tenders available after error")
+                return []
     
     def _score_all_tenders(self, tenders: List[Dict[str, Any]], company_profile: Dict[str, Any]):
         """Score all tenders using the scoring tool"""
@@ -788,6 +811,15 @@ Format: [{"title": "...", "description": "...", "score": 85, "justification": ".
             # Count qualified tenders
             qualified_count = len([t for t in scored_tenders if t.get('score', 0) >= 30])
             
+            # Get top tender details
+            top_tender_info = ""
+            if proposals:
+                top_tender_info = "\nTop Tenders with Proposals:\n"
+                for i, proposal in enumerate(proposals[:2], 1):
+                    tender_title = proposal.get('tender_title', 'Unknown')
+                    tender_score = proposal.get('tender_score', 0)
+                    top_tender_info += f"- {i}. {tender_title[:80]}... (Score: {tender_score}/100)\n"
+            
             # Create email body
             body = f"""
 Tendazilla Workflow Complete!
@@ -799,15 +831,16 @@ Summary:
 - Tenders Scraped: {len(scraped_tenders)}
 - Tenders Scored: {len(scored_tenders)}
 - Qualified Tenders (Score ≥30): {qualified_count}
-- Proposals Generated: {len(proposals)}
+- Proposals Generated: {len(proposals)} (Top 2 highest-scoring tenders only)
 
 All results have been saved to the session folder: {self.session_folder}
 
 Files generated:
 - 01_scraped_tenders.json - Raw scraped tender data
 - 02_scored_tenders.json - Tenders with scoring results
-- proposals/ - Generated proposal markdown files
+- proposals/ - Generated proposal markdown files (top 2 tenders only)
 
+{top_tender_info}
 Review the session folder for complete details and generated proposals.
             """.strip()
             

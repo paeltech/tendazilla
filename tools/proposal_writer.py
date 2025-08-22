@@ -64,19 +64,36 @@ class AIProposalWriter:
             # Create comprehensive prompt for AI
             prompt = self._create_ai_proposal_prompt(tender, company_profile)
             
-            # Call OpenAI API
-            response = self.openai_client.ChatCompletion.create(
-                model=config.PROPOSAL_AI_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are an expert proposal writer specializing in technology tenders. Write a comprehensive, professional proposal in markdown format that addresses all tender requirements and showcases company capabilities."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=config.PROPOSAL_MAX_TOKENS,
-                temperature=0.7
-            )
-            
-            # Extract and clean the proposal
-            ai_proposal = response.choices[0].message.content
+            # Call OpenAI API with updated format
+            try:
+                # Try new OpenAI API format first
+                response = self.openai_client.chat.completions.create(
+                    model=config.PROPOSAL_AI_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are an expert proposal writer specializing in technology tenders. Write a comprehensive, professional proposal in markdown format that addresses all tender requirements and showcases company capabilities."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=config.PROPOSAL_MAX_TOKENS,
+                    temperature=0.7
+                )
+                
+                # Extract and clean the proposal
+                ai_proposal = response.choices[0].message.content
+                
+            except AttributeError:
+                # Fallback to old format if available
+                response = self.openai_client.ChatCompletion.create(
+                    model=config.PROPOSAL_AI_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are an expert proposal writer specializing in technology tenders. Write a comprehensive, professional proposal in markdown format that addresses all tender requirements and showcases company capabilities."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=config.PROPOSAL_MAX_TOKENS,
+                    temperature=0.7
+                )
+                
+                # Extract and clean the proposal
+                ai_proposal = response.choices[0].message.content
             
             # Ensure it starts with a title
             if not ai_proposal.startswith('#'):
