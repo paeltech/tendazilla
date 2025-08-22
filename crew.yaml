@@ -1,0 +1,31 @@
+crew:
+  name: Tendazilla
+  description: A 4-agent crew that scrapes tenders, scores opportunities, drafts proposals, and notifies approvers.
+
+  agents:
+    - TenderDiscoveryAgent
+    - EligibilityScoringAgent
+    - ProposalWriterAgent
+    - EmailNotificationAgent
+
+  tasks:
+
+    - name: ScrapeTenderSites
+      agent: TenderDiscoveryAgent
+      description: Crawl tender portals and return structured tender metadata.
+      expected_output: A list of tender objects in JSON format.
+
+    - name: ScoreTenders
+      agent: EligibilityScoringAgent
+      description: Analyze tender metadata and score win-likelihood.
+      expected_output: List of tender objects with added confidence scores. Only pass tenders scoring 50 or higher.
+
+    - name: GenerateProposals
+      agent: ProposalWriterAgent
+      description: Write complete proposal drafts for high-confidence tenders.
+      expected_output: Markdown-formatted proposals tied to each tender.
+
+    - name: NotifyApprover
+      agent: EmailNotificationAgent
+      description: Format and email the tender summary and proposal to internal approvers.
+      expected_output: Email sent confirmation.

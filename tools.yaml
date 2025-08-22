@@ -1,0 +1,98 @@
+tools:
+
+  - name: scrape_web
+    description: |
+      Scrapes tender listings from a specific portal URL. Returns a list of structured tender opportunities.
+    parameters:
+      - name: url
+        type: string
+        description: The URL of the tender site to scrape.
+    required_parameters: [url]
+    output_type: list
+    examples:
+      input:
+        url: "https://tenders.example.com/latest"
+      output: |
+        [
+          {
+            "title": "Cloud Migration Services",
+            "description": "Looking for vendors to help migrate legacy systems to AWS.",
+            "deadline": "2025-09-10",
+            "budget": "USD 150,000",
+            "requirements": ["AWS Certified", "3 similar projects"],
+            "industry": "IT",
+            "location": "California"
+          }
+        ]
+
+  - name: score_tender
+    description: |
+      Evaluates a tender opportunity against company profile and returns a confidence score and reasoning.
+    parameters:
+      - name: tender
+        type: object
+        description: A JSON object containing tender metadata.
+      - name: company_profile
+        type: object
+        description: JSON object describing company strengths, past experience, and certifications.
+    required_parameters: [tender, company_profile]
+    output_type: object
+    examples:
+      input:
+        tender: {...}
+        company_profile: {...}
+      output: |
+        {
+          "score": 76,
+          "justification": "Strong industry match, similar past projects, and all mandatory criteria met."
+        }
+
+  - name: generate_proposal
+    description: |
+      Generates a full proposal in markdown format based on the tender and company profile.
+    parameters:
+      - name: tender
+        type: object
+        description: Tender opportunity details.
+      - name: company_profile
+        type: object
+        description: Company details including past experience and offerings.
+    required_parameters: [tender, company_profile]
+    output_type: string
+    examples:
+      input:
+        tender: {...}
+        company_profile: {...}
+      output: |
+        ## Executive Summary
+        We are pleased to submit our proposal for...
+        ## Proposed Solution
+        ...
+        ## Relevant Experience
+        ...
+
+  - name: send_email
+    description: |
+      Sends an email to internal stakeholders with the tender summary and proposal.
+    parameters:
+      - name: to
+        type: string
+        description: Email address of the recipient.
+      - name: subject
+        type: string
+        description: Subject line for the email.
+      - name: body
+        type: string
+        description: Body content of the email.
+      - name: proposal
+        type: string
+        description: The markdown-formatted proposal to attach or embed.
+    required_parameters: [to, subject, body, proposal]
+    output_type: string
+    examples:
+      input:
+        to: "bd-approver@example.com"
+        subject: "Proposal Draft: Cloud Migration Tender"
+        body: "A new opportunity was found with a confidence score of 76%..."
+        proposal: "## Executive Summary\nWe propose..."
+      output: "Email sent successfully to bd-approver@example.com"

@@ -1,0 +1,89 @@
+{
+    "company_name": "ADB Technology.",
+    "headquarters": "Dubai, UAE",
+    "other_locations": ["UK", "Nairobi, Kenya", "Dar es Salaam, Tanzania"],
+    "company_email": "office@adbtech.ai",
+    "company_website": "https://adbtech.ai",
+    "industry_focus": ["Information Technology", "Cloud Services", "Digital Transformation", "Banking and Finance","big data", "AI"],
+    "core_services": [
+      "Cloud Infrastructure Deployment",
+      "Legacy System Migration",
+      "Cybersecurity Consulting",
+      "Custom Software Development",
+      "DevOps and CI/CD Automation"
+    ],
+    "certifications": [
+      "ISO 27001",
+      "AWS Advanced Partner",
+      "Microsoft Azure Gold Partner",
+      "PMI Certified Project Managers"
+    ],
+    "team_expertise": {
+      "cloud_engineers": 12,
+      "security_experts": 4,
+      "software_developers": 18,
+      "project_managers": 5
+    },
+    "relevant_technologies": [
+      "AWS",
+      "Azure",
+      "Docker",
+      "Kubernetes",
+      "Terraform",
+      "Python",
+      "Node.js",
+      "React"
+    ],
+    "years_in_operation": 7,
+    "notable_clients": [
+      "Safaricom PLC",
+      "Equity Bank",
+      "UNDP Africa",
+      "Ministry of ICT (Kenya)",
+      "CRDB Bank"
+    ],
+    "past_projects": [
+      {
+        "name": "Cloud Migration for UNDP",
+        "description": "Migrated legacy systems to AWS cloud, implemented security and compliance controls.",
+        "budget": "USD 300,000",
+        "duration": "6 months",
+        "outcome": "Reduced hosting costs by 40%, zero downtime during migration."
+      },
+      {
+        "name": "Cybersecurity Audit for Equity Bank",
+        "description": "Performed a comprehensive risk assessment and implemented endpoint protection.",
+        "budget": "USD 150,000",
+        "duration": "3 months",
+        "outcome": "Improved security posture, passed CBK audit with no flags."
+      },
+      {
+        "name": "DevOps Automation for Government Portal",
+        "description": "Built CI/CD pipelines and containerized infrastructure for e-services portal.",
+        "budget": "USD 200,000",
+        "duration": "4 months",
+        "outcome": "Cut deployment time by 75%, reduced downtime incidents."
+      }
+    ],
+    "geographical_focus": ["Kenya", "East Africa", "Africa-wide"],
+    "languages_supported": ["English", "Swahili", "French"],
+    "compliance_experience": [
+      "GDPR",
+      "CBK Guidelines",
+      "Government Procurement Regulations (Tanzania)"
+    ],
+    "tender_response_history": {
+      "total_responses": 32,
+      "wins": 12,
+      "win_rate": "37.5%"
+    },
+    "preferred_project_size": {
+      "min_budget": 20000,
+      "max_budget": 500000
+    },
+    "availability": {
+      "can_start_in_days": 10,
+      "max_concurrent_projects": 5
+    }
+  }
+  
